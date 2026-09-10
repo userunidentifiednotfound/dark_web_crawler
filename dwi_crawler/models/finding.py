@@ -74,6 +74,18 @@ class Finding(Base):
     company: Mapped["Company"] = relationship("Company", back_populates="findings")  # type: ignore # noqa: F821
     evidence_items: Mapped[list["Evidence"]] = relationship("Evidence", back_populates="finding", cascade="all, delete-orphan")
 
+    @property
+    def finding_key(self) -> str:
+        return self.matched_keyword
+
+    @property
+    def evidences(self) -> list["Evidence"]:
+        return self.evidence_items
+
+    @property
+    def entities(self) -> list:
+        return []
+
 
 class Evidence(Base):
     __tablename__ = "evidence"

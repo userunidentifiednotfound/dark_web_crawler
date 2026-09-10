@@ -34,6 +34,18 @@ class Page(Base):
     links: Mapped[list["PageLink"]] = relationship("PageLink", back_populates="source_page", cascade="all, delete-orphan")
     evidence: Mapped[list["Evidence"]] = relationship("Evidence", back_populates="page", cascade="all, delete-orphan")  # type: ignore # noqa: F821
 
+    @property
+    def url(self) -> str:
+        return self.canonical_url
+
+    @property
+    def status_code(self) -> int:
+        return self.http_status
+
+    @property
+    def title(self) -> str | None:
+        return None
+
 
 class PageVersion(Base):
     __tablename__ = "page_versions"

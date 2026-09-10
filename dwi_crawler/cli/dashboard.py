@@ -194,21 +194,24 @@ async def _op_view_findings():
             if not target:
                 console.print(f"[red]Finding ID {f_id} not found.[/red]")
             else:
+                entities = getattr(target, "entities", [])
+                evidences = getattr(target, "evidence_items", getattr(target, "evidences", []))
+                f_key = getattr(target, "finding_key", getattr(target, "matched_keyword", "N/A"))
                 console.print(Panel(
                     f"[bold]Title:[/bold] {target.title}\n"
                     f"[bold]Severity:[/bold] {target.severity.upper()} (Confidence: {target.confidence})\n"
                     f"[bold]Description:[/bold] {target.description or 'None'}\n"
-                    f"[bold]Finding Key:[/bold] {target.finding_key}\n"
-                    f"[bold]Associated Entities (IOCs):[/bold] {len(target.entities)}\n"
-                    f"[bold]Evidence Snapshots:[/bold] {len(target.evidences)}",
+                    f"[bold]Finding Key:[/bold] {f_key}\n"
+                    f"[bold]Associated Entities (IOCs):[/bold] {len(entities)}\n"
+                    f"[bold]Evidence Snapshots:[/bold] {len(evidences)}",
                     title=f"Finding Deep Dive - ID {target.id}",
                     style="bold red" if target.severity.upper() in ("CRITICAL", "HIGH") else "yellow",
                 ))
-                if target.entities:
+                if entities:
                     e_tab = Table(title="Correlated Threat Entities (IOCs)")
                     e_tab.add_column("Type", style="cyan")
                     e_tab.add_column("Value / Indicator", style="bold white")
-                    for e in target.entities:
+                    for e in entities:
                         e_tab.add_row(e.entity_type, e.value)
                     console.print(e_tab)
             Prompt.ask("\nPress Enter to continue")
@@ -262,12 +265,15 @@ async def _op_view_downloads():
         table.add_column("Content SHA256", style="dim")
 
         for p in pages:
+            url_str = getattr(p, "canonical_url", getattr(p, "url", ""))
+            status_str = str(getattr(p, "http_status", getattr(p, "status_code", "-")))
+            title_str = (getattr(p, "title", "-") or "-")
             table.add_row(
                 str(p.id),
-                str(p.status_code or "-"),
-                p.url[:50] + ("..." if len(p.url) > 50 else ""),
-                (p.title or "-")[:30],
-                (p.latest_content_hash or "-")[:16] + "...",
+                status_str,
+                url_str[:50] + ("..." if len(url_str) > 50 else ""),
+                title_str[:30],
+                (getattr(p, "latest_content_hash", None) or "-")[:16] + "...",
             )
         console.print(table)
 
@@ -279,11 +285,12 @@ async def _op_view_downloads():
             else:
                 storage = ContentAddressableStorage()
                 content = storage.retrieve_text(page.latest_content_hash, ext="html")
+                page_url = getattr(page, "canonical_url", getattr(page, "url", ""))
                 if content:
                     preview = content[:800] + ("\n... [truncated]" if len(content) > 800 else "")
                     console.print(Panel(
                         preview,
-                        title=f"CAS Content Preview - Page {page.id} ({page.url})",
+                        title=f"CAS Content Preview - Page {page.id} ({page_url})",
                         style="cyan",
                     ))
                 else:

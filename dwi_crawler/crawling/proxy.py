@@ -87,6 +87,11 @@ class ProxyManager:
                 "circuit_open": self.is_circuit_open,
             }
 
+    async def check_tor_connectivity(self) -> bool:
+        """Convenience boolean check for Tor proxy reachability."""
+        res = await self.check_health()
+        return res.get("status") == "healthy"
+
     @staticmethod
     def _sync_socket_check(host: str, port: int, timeout: float) -> None:
         with socket.create_connection((host, port), timeout=timeout):

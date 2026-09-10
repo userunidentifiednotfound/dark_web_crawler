@@ -117,6 +117,16 @@ class DiscoveryWorker:
         logger.info(f"[{self.worker_id}] Discovery finished: found {len(discovered_items)} total candidates.")
         return discovered_items
 
+    async def run_discovery_for_company(
+        self,
+        company_id: int,
+        *,
+        keyword_id: int | None = None,
+        search_only: bool = False,
+    ) -> list[SearchResultItem]:
+        """Alias for run_for_company."""
+        return await self.run_for_company(company_id, keyword_id=keyword_id, search_only=search_only)
+
     async def start_loop(self, poll_interval: float = 30.0) -> None:
         """Continuously monitors active companies for discovery needs."""
         self.is_running = True

@@ -201,6 +201,15 @@ class QueueManager:
         await self.session.flush()
         return res.rowcount or 0
 
+    async def list_queue_jobs(self, limit: int = 50, status: str | None = None) -> list[CrawlJob]:
+        """Lists crawl jobs from the queue."""
+        stmt = select(CrawlJob)
+        if status:
+            stmt = stmt.where(CrawlJob.status == status)
+        stmt = stmt.order_by(CrawlJob.priority.desc(), CrawlJob.created_at.desc()).limit(limit)
+        res = await self.session.execute(stmt)
+        return list(res.scalars().all())
+
     async def get_queue_stats(self) -> dict[str, int]:
         """Returns aggregate queue counts by status."""
         stmt = select(CrawlJob.status, func.count(CrawlJob.id)).group_by(CrawlJob.status)

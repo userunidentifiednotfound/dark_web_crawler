@@ -142,6 +142,10 @@ class ProcessingWorker:
 
         return processed_count
 
+    async def process_pending_pages(self, limit: int = 50) -> int:
+        """Alias for process_all_pending."""
+        return await self.process_all_pending(limit=limit)
+
     async def start_loop(self, poll_interval: float = 5.0) -> None:
         self.is_running = True
         logger.info(f"[{self.worker_id}] Processing worker daemon started.")
