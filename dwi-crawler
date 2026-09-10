@@ -1,0 +1,7 @@
+#!/usr/bin/env python3
+"""DWI Dark Web Crawler CLI launcher."""
+import sys
+from dwi_crawler.cli.main import app
+
+if __name__ == "__main__":
+    app()

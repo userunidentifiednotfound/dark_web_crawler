@@ -1,0 +1,17 @@
+[
+  "tests/test_entity_extraction.py::test_extract_crypto_wallets",
+  "tests/test_entity_extraction.py::test_extract_emails",
+  "tests/test_entity_extraction.py::test_extract_hashes_and_ips",
+  "tests/test_html_parsing.py::test_html_parser_headings_and_clean_text",
+  "tests/test_html_parsing.py::test_link_extraction_html_and_text",
+  "tests/test_keyword_enhancement.py::test_keyword_enhancement_bounded_exact",
+  "tests/test_keyword_enhancement.py::test_keyword_enhancement_counts",
+  "tests/test_proxy_circuit.py::test_circuit_breaker_trip_and_reset",
+  "tests/test_storage_cas.py::test_cas_deduplication",
+  "tests/test_storage_cas.py::test_cas_nonexistent_hash",
+  "tests/test_storage_cas.py::test_cas_store_and_retrieve_text",
+  "tests/test_url_normalization.py::test_onion_detection",
+  "tests/test_url_normalization.py::test_url_fingerprint_deduplication",
+  "tests/test_url_normalization.py::test_url_normalization_onion",
+  "tests/test_url_normalization.py::test_url_normalization_standard"
+]

@@ -1,0 +1,6 @@
+{
+  "name": "DWI Dark Web Crawler",
+  "description": "CLI-only Dark Web and Onion Intelligence Crawler for DWI",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

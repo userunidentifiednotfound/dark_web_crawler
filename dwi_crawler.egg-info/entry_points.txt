@@ -1,0 +1,2 @@
+[console_scripts]
+dwi-crawler = dwi_crawler.cli.main:main
