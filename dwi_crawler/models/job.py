@@ -34,6 +34,10 @@ class CrawlJob(Base):
 
     discovered_url: Mapped["DiscoveredURL"] = relationship("DiscoveredURL", back_populates="crawl_jobs")  # type: ignore # noqa: F821
 
+    @property
+    def retry_count(self) -> int:
+        return self.attempt
+
 
 class SearchRun(Base):
     __tablename__ = "search_runs"

@@ -164,31 +164,34 @@ async def _op_view_findings():
     """List and inspect security findings."""
     async with get_async_session_factory()() as session:
         repo = FindingRepository(session)
-        findings = await repo.list_findings(limit=25)
+        findings = await repo.list_findings(limit=None)
         if not findings:
             console.print("\n[yellow]No security findings registered yet.[/yellow]")
             Prompt.ask("\nPress Enter to continue")
             return
 
-        table = Table(title=f"Security Findings (Top {len(findings)})")
+        table = Table(title=f"All Security Findings ({len(findings)} Total Records)")
         table.add_column("ID", style="cyan", justify="right")
         table.add_column("Severity", style="bold")
         table.add_column("Title / Threat Match", style="white")
+        table.add_column("Matched Keyword", style="yellow")
         table.add_column("Confidence", justify="right")
         table.add_column("Identified At", style="dim")
 
         for f in findings:
             sev_style = "red" if f.severity.upper() in ("CRITICAL", "HIGH") else "yellow"
+            kw_match = getattr(f, "matched_keyword", "-")
             table.add_row(
                 str(f.id),
                 f"[{sev_style}]{f.severity.upper()}[/{sev_style}]",
-                f.title[:65] + ("..." if len(f.title) > 65 else ""),
+                f.title,
+                kw_match[:25],
                 f"{f.confidence:.2f}",
                 f.created_at.strftime("%Y-%m-%d %H:%M") if f.created_at else "",
             )
         console.print(table)
 
-        f_id = Prompt.ask("\nEnter Finding ID to view deep details (or press Enter to return)", default="")
+        f_id = Prompt.ask("\nEnter Finding ID to view deep details & inspect evidence HTML (or press Enter to return)", default="")
         if f_id.isdigit():
             target = await repo.get_finding(int(f_id))
             if not target:
@@ -197,13 +200,21 @@ async def _op_view_findings():
                 entities = getattr(target, "entities", [])
                 evidences = getattr(target, "evidence_items", getattr(target, "evidences", []))
                 f_key = getattr(target, "finding_key", getattr(target, "matched_keyword", "N/A"))
-                console.print(Panel(
+                source_url = getattr(target, "source_url", "N/A")
+                source_type = getattr(target, "source_type", "onion")
+
+                info_text = (
                     f"[bold]Title:[/bold] {target.title}\n"
                     f"[bold]Severity:[/bold] {target.severity.upper()} (Confidence: {target.confidence})\n"
                     f"[bold]Description:[/bold] {target.description or 'None'}\n"
-                    f"[bold]Finding Key:[/bold] {f_key}\n"
+                    f"[bold]Finding Key / Matched Keyword:[/bold] {f_key}\n"
+                    f"[bold]Source URL:[/bold] {source_url} ([cyan]{source_type}[/cyan])\n"
+                    f"[bold]Identified At:[/bold] {target.created_at.strftime('%Y-%m-%d %H:%M:%S') if target.created_at else 'N/A'}\n"
                     f"[bold]Associated Entities (IOCs):[/bold] {len(entities)}\n"
-                    f"[bold]Evidence Snapshots:[/bold] {len(evidences)}",
+                    f"[bold]Evidence Snapshots:[/bold] {len(evidences)}"
+                )
+                console.print(Panel(
+                    info_text,
                     title=f"Finding Deep Dive - ID {target.id}",
                     style="bold red" if target.severity.upper() in ("CRITICAL", "HIGH") else "yellow",
                 ))
@@ -212,8 +223,32 @@ async def _op_view_findings():
                     e_tab.add_column("Type", style="cyan")
                     e_tab.add_column("Value / Indicator", style="bold white")
                     for e in entities:
-                        e_tab.add_row(e.entity_type, e.value)
+                        e_tab.add_row(getattr(e, "entity_type", "IOC"), getattr(e, "value", str(e)))
                     console.print(e_tab)
+
+                if evidences:
+                    ev_tab = Table(title="Evidence Records Linked to Finding")
+                    ev_tab.add_column("Evidence ID", style="cyan", justify="right")
+                    ev_tab.add_column("Content SHA256", style="dim")
+                    ev_tab.add_column("Source URL", style="white")
+                    ev_tab.add_column("Context Snippet", style="italic")
+                    for ev in evidences:
+                        ev_tab.add_row(
+                            str(ev.id),
+                            ev.content_hash[:16] + "...",
+                            ev.source_url[:40] + ("..." if len(ev.source_url) > 40 else ""),
+                            ev.matched_text_context[:60] + ("..." if len(ev.matched_text_context) > 60 else ""),
+                        )
+                    console.print(ev_tab)
+
+                    if Confirm.ask("Inspect raw HTML source for this finding entirely?", default=False):
+                        storage = ContentAddressableStorage()
+                        first_ev = evidences[0]
+                        raw_html = storage.retrieve_text(first_ev.content_hash, ext="html")
+                        if raw_html:
+                            _inspect_raw_html_interactive(raw_html, title=f"Finding #{target.id} Evidence HTML ({first_ev.content_hash})")
+                        else:
+                            console.print("[yellow]Raw HTML content not found in CAS for hash:[/yellow] " + first_ev.content_hash)
             Prompt.ask("\nPress Enter to continue")
 
 
@@ -221,43 +256,90 @@ async def _op_view_queue():
     """List pending crawl jobs and URLs."""
     async with get_async_session_factory()() as session:
         q_mgr = QueueManager(session)
-        jobs = await q_mgr.list_queue_jobs(limit=25)
+        jobs = await q_mgr.list_queue_jobs(limit=None)
         if not jobs:
             console.print("\n[yellow]No jobs in queue.[/yellow]")
             Prompt.ask("\nPress Enter to continue")
             return
 
-        table = Table(title=f"Crawl Queue Status (Top {len(jobs)})")
+        table = Table(title=f"All Crawl Queue Jobs ({len(jobs)} Total)")
         table.add_column("Job ID", style="cyan", justify="right")
         table.add_column("State", style="bold")
         table.add_column("Target URL", style="white")
         table.add_column("Priority", justify="right")
-        table.add_column("Retries", justify="right")
+        table.add_column("Attempt / Retries", justify="right")
+        table.add_column("Created At", style="dim")
 
         for j in jobs:
             st_color = "green" if j.status == "SUCCESS" else "yellow" if j.status == "PENDING" else "red"
+            attempts = getattr(j, "attempt", getattr(j, "retry_count", 0))
+            max_r = getattr(j, "max_retries", 4)
+            created_str = j.created_at.strftime("%H:%M:%S") if getattr(j, "created_at", None) else ""
             table.add_row(
                 str(j.id),
                 f"[{st_color}]{j.status}[/{st_color}]",
                 j.url[:70] + ("..." if len(j.url) > 70 else ""),
                 str(j.priority),
-                str(j.retry_count),
+                f"{attempts}/{max_r}",
+                created_str,
             )
         console.print(table)
         Prompt.ask("\nPress Enter to continue")
+
+
+def _inspect_raw_html_interactive(content: str, title: str = "Raw HTML"):
+    """Interactive helper to inspect entire raw HTML or search/find within it."""
+    console.print(Panel(
+        f"[bold cyan]{title}[/bold cyan]\n"
+        f"Total Size: {len(content)} characters | {len(content.encode('utf-8'))} bytes | {len(content.splitlines())} lines\n\n"
+        f"Choose inspection mode:\n"
+        f"  [bold yellow]1[/bold yellow] - Display Entire Raw HTML (complete un-truncated source)\n"
+        f"  [bold yellow]2[/bold yellow] - Find / Search text inside Entire Raw HTML\n"
+        f"  [bold yellow]3[/bold yellow] - Preview First 1,500 characters",
+        title="HTML Inspector",
+        style="cyan",
+    ))
+    mode = Prompt.ask("Select mode", choices=["1", "2", "3"], default="1")
+    if mode == "1":
+        console.print(f"\n[bold green]--- START OF FULL RAW HTML ({len(content)} bytes) ---[/bold green]")
+        console.print(content, markup=False, highlight=False)
+        console.print(f"[bold green]--- END OF FULL RAW HTML ---[/bold green]\n")
+    elif mode == "2":
+        term = Prompt.ask("Enter search query / keyword to find entirely in HTML").strip()
+        if not term:
+            console.print("[yellow]Empty search term.[/yellow]")
+            return
+        lines = content.splitlines()
+        matches = []
+        for idx, line in enumerate(lines, 1):
+            if term.lower() in line.lower():
+                matches.append((idx, line))
+        if matches:
+            console.print(f"\n[bold green]Found {len(matches)} matching line(s) for '{term}':[/bold green]")
+            match_table = Table(title=f"Occurrences of '{term}' in HTML")
+            match_table.add_column("Line", style="cyan", justify="right")
+            match_table.add_column("Matching Line Content", style="white")
+            for line_no, line_text in matches:
+                match_table.add_row(str(line_no), line_text.strip()[:140])
+            console.print(match_table)
+        else:
+            console.print(f"[yellow]No occurrences found for '{term}' in raw HTML.[/yellow]")
+    elif mode == "3":
+        preview = content[:1500] + ("\n... [truncated for quick summary]" if len(content) > 1500 else "")
+        console.print(Panel(preview, title=f"Quick Summary (First 1500 chars)", style="cyan"))
 
 
 async def _op_view_downloads():
     """List downloaded pages in CAS with option to inspect HTML."""
     async with get_async_session_factory()() as session:
         page_repo = PageRepository(session)
-        pages = await page_repo.list_pages(limit=25)
+        pages = await page_repo.list_pages(limit=None)
         if not pages:
             console.print("\n[yellow]No downloaded pages in CAS yet.[/yellow]")
             Prompt.ask("\nPress Enter to continue")
             return
 
-        table = Table(title=f"Downloaded Pages in Content Addressable Storage (CAS) (Top {len(pages)})")
+        table = Table(title=f"All Downloaded Pages in Content Addressable Storage (CAS) ({len(pages)} Total Pages)")
         table.add_column("Page ID", style="cyan", justify="right")
         table.add_column("Status", justify="right")
         table.add_column("URL", style="white")
@@ -271,13 +353,13 @@ async def _op_view_downloads():
             table.add_row(
                 str(p.id),
                 status_str,
-                url_str[:50] + ("..." if len(url_str) > 50 else ""),
+                url_str[:55] + ("..." if len(url_str) > 55 else ""),
                 title_str[:30],
                 (getattr(p, "latest_content_hash", None) or "-")[:16] + "...",
             )
         console.print(table)
 
-        pid = Prompt.ask("\nEnter Page ID to inspect raw HTML / evidence (or press Enter to return)", default="")
+        pid = Prompt.ask("\nEnter Page ID to inspect raw HTML entirely (or press Enter to return)", default="")
         if pid.isdigit():
             page = await page_repo.get_page(int(pid))
             if not page or not page.latest_content_hash:
@@ -287,14 +369,9 @@ async def _op_view_downloads():
                 content = storage.retrieve_text(page.latest_content_hash, ext="html")
                 page_url = getattr(page, "canonical_url", getattr(page, "url", ""))
                 if content:
-                    preview = content[:800] + ("\n... [truncated]" if len(content) > 800 else "")
-                    console.print(Panel(
-                        preview,
-                        title=f"CAS Content Preview - Page {page.id} ({page_url})",
-                        style="cyan",
-                    ))
+                    _inspect_raw_html_interactive(content, title=f"Page {page.id} ({page_url})")
                 else:
-                    console.print("[yellow]Raw content not found on disk.[/yellow]")
+                    console.print(f"[yellow]Raw content not found on disk for hash: {page.latest_content_hash}[/yellow]")
             Prompt.ask("\nPress Enter to continue")
 
 

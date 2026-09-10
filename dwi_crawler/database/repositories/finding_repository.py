@@ -121,10 +121,12 @@ class FindingRepository:
         res = await self.session.execute(stmt)
         return res.scalar_one_or_none()
 
-    async def list_findings(self, company_id: int | None = None, limit: int = 50) -> list[Finding]:
+    async def list_findings(self, company_id: int | None = None, limit: int | None = None) -> list[Finding]:
         stmt = select(Finding).options(selectinload(Finding.evidence_items))
         if company_id:
             stmt = stmt.where(Finding.company_id == company_id)
-        stmt = stmt.order_by(Finding.created_at.desc()).limit(limit)
+        stmt = stmt.order_by(Finding.created_at.desc())
+        if limit is not None:
+            stmt = stmt.limit(limit)
         res = await self.session.execute(stmt)
         return list(res.scalars().all())

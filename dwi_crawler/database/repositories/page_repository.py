@@ -154,11 +154,13 @@ class PageRepository:
         res = await self.session.execute(stmt)
         return res.scalar_one_or_none()
 
-    async def list_pages(self, company_id: int | None = None, limit: int = 50) -> list[Page]:
+    async def list_pages(self, company_id: int | None = None, limit: int | None = None) -> list[Page]:
         stmt = select(Page)
         if company_id:
             stmt = stmt.where(Page.company_id == company_id)
-        stmt = stmt.order_by(Page.last_crawled_at.desc()).limit(limit)
+        stmt = stmt.order_by(Page.last_crawled_at.desc())
+        if limit is not None:
+            stmt = stmt.limit(limit)
         res = await self.session.execute(stmt)
         return list(res.scalars().all())
 

@@ -12,22 +12,23 @@ class MockPage(NamedTuple):
     captcha_type: str | None = None
 
 
-def generate_ransomware_blog(company_name: str = "Acme Global") -> MockPage:
+def generate_ransomware_blog(company_name: str = "Tolaram") -> MockPage:
+    domain = "tolaram.com" if "tolaram" in company_name.lower() else company_name.lower().replace(' ', '') + ".com"
     html = f"""<!DOCTYPE html>
 <html>
 <head><title>BlackCat / ALPHV Leak Blog - {company_name}</title></head>
 <body>
 <h1>Victim Announcement: {company_name}</h1>
 <p class="leak-description">
-We have successfully breached the internal database and infrastructure of {company_name}.
+We have successfully breached the internal database and infrastructure of {company_name} ({domain}).
 Over 450GB of executive emails, internal passwords, financial audits, and client contracts were exfiltrated.
 Deadline for ransom payment: 72 hours.
 </p>
 <div class="evidence-box">
   <h3>Compromised Data Samples:</h3>
   <pre>
-  admin@{company_name.lower().replace(' ', '')}.com:Hash$2y$12$e8Y.
-  executive@{company_name.lower().replace(' ', '')}.com:Summer2025!
+  admin@{domain}:Hash$2y$12$e8Y.
+  executive@{domain}:Summer2025!
   Internal IP Gateway: 198.51.100.45
   Database Backup SHA256: 2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824
   </pre>
@@ -48,8 +49,8 @@ Deadline for ransom payment: 72 hours.
     return MockPage(html=html)
 
 
-def generate_credential_paste(company_name: str = "Acme Global") -> MockPage:
-    domain = company_name.lower().replace(" ", "") + ".com"
+def generate_credential_paste(company_name: str = "Tolaram") -> MockPage:
+    domain = "tolaram.com" if "tolaram" in company_name.lower() else company_name.lower().replace(" ", "") + ".com"
     html = f"""<!DOCTYPE html>
 <html>
 <head><title>DarkPaste #8892 - {company_name} Leaks</title></head>
@@ -72,7 +73,7 @@ MD5: 5d41402abc4b2a76b9719d911017c592
     return MockPage(html=html)
 
 
-def generate_marketplace_listing(company_name: str = "Acme Global") -> MockPage:
+def generate_marketplace_listing(company_name: str = "Tolaram") -> MockPage:
     html = f"""<!DOCTYPE html>
 <html>
 <head><title>Empire Market 2.0 - Corporate Access</title></head>
@@ -108,12 +109,13 @@ def generate_captcha_page() -> MockPage:
     return MockPage(html=html, status_code=403, is_captcha=True, captcha_type="onion_challenge")
 
 
-def generate_broken_html_page(company_name: str = "Acme Global") -> MockPage:
+def generate_broken_html_page(company_name: str = "Tolaram") -> MockPage:
+    domain = "tolaram.com" if "tolaram" in company_name.lower() else company_name.lower().replace(' ', '') + ".com"
     html = f"""<html xmlns="http://www.w3.org/1999/xhtml">
 <title>Unclosed page for {company_name}
 <body>
 <div><h3>Compromised Data</h3>
-<p>Internal database leaked: info@{company_name.lower().replace(' ', '')}.com
+<p>Internal database leaked: info@{domain}
 <a href="http://sublink.onion/page>broken link
 <img src="http://sublink.onion/logo.png"
 <script>var x = 1;
@@ -137,7 +139,7 @@ def generate_link_directory_page(base_onion: str = "http://directory.onion") -> 
     return MockPage(html=html)
 
 
-def get_mock_page_for_url(url: str, company_name: str = "Acme Global") -> MockPage:
+def get_mock_page_for_url(url: str, company_name: str = "Tolaram") -> MockPage:
     """Returns an appropriate realistic mock page based on URL patterns or deterministically."""
     url_lower = url.lower()
     if "captcha" in url_lower or "challenge" in url_lower:
