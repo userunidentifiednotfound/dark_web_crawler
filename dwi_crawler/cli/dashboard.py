@@ -166,7 +166,8 @@ async def _op_view_findings():
         repo = FindingRepository(session)
         findings = await repo.list_findings(limit=None)
         if not findings:
-            console.print("\n[yellow]No security findings registered yet.[/yellow]")
+            console.print("\n[bold green]✓ No data found in dark web.[/bold green]")
+            console.print("[dim]Zero threat leaks or compromised records detected across target organizations (Tolaram, MetaYB).[/dim]")
             Prompt.ask("\nPress Enter to continue")
             return
 

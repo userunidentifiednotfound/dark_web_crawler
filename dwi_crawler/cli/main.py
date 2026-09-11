@@ -46,6 +46,10 @@ app.command("health", help="Diagnose Tor proxy, database, and storage health.")(
 app.command("config", help="Inspect runtime configuration.")(show_config)
 app.command("dashboard", help="Launch interactive CLI menu dashboard.")(start_dashboard)
 
+# Multi-Company Dark Web Verification
+from check_companies import check_companies
+app.command("check", help="Verify and check dark web intelligence for both companies (Tolaram & MetaYB).")(check_companies)
+
 
 def main():
     app()

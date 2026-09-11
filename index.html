@@ -1,6 +1,32 @@
 <!doctype html>
 <html lang="en">
   <head>
+    <script>
+      (function() {
+        try {
+          var currentFetch = window.fetch ? window.fetch.bind(window) : null;
+          var fetchDescriptor = {
+            get: function() {
+              return currentFetch;
+            },
+            set: function(newFetch) {
+              currentFetch = newFetch;
+            },
+            configurable: true,
+            enumerable: true
+          };
+          try {
+            Object.defineProperty(window, 'fetch', fetchDescriptor);
+          } catch (e1) {
+            try {
+              if (typeof Window !== 'undefined' && Window.prototype) {
+                Object.defineProperty(Window.prototype, 'fetch', fetchDescriptor);
+              }
+            } catch (e2) {}
+          }
+        } catch (err) {}
+      })();
+    </script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>DWI Dark Web Crawler</title>

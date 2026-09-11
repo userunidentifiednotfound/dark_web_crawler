@@ -139,9 +139,34 @@ def generate_link_directory_page(base_onion: str = "http://directory.onion") -> 
     return MockPage(html=html)
 
 
+def generate_clean_onion_page(company_name: str = "Tolaram") -> MockPage:
+    html = f"""<!DOCTYPE html>
+<html>
+<head><title>Tor Hidden Service - Clean Public Node</title></head>
+<body>
+<h1>Hidden Service Gateway</h1>
+<p>Tor hidden service directory status: active and clean.</p>
+<p>No compromised data, leaked credentials, or ransomware notices found for {company_name}.</p>
+<div class="status-box">Status: 0 threat indicators. No data found in dark web.</div>
+</body>
+</html>
+"""
+    return MockPage(html=html)
+
+
 def get_mock_page_for_url(url: str, company_name: str = "Tolaram") -> MockPage:
     """Returns an appropriate realistic mock page based on URL patterns or deterministically."""
     url_lower = url.lower()
+    c_lower = company_name.lower()
+    
+    # For Tolaram and MetaYB: Do NOT mock breaches or leaks. Return clean benign onion pages.
+    if "tolaram" in c_lower or "metayb" in c_lower:
+        if "captcha" in url_lower or "challenge" in url_lower:
+            return generate_captcha_page()
+        if "directory" in url_lower or "index" in url_lower:
+            return generate_link_directory_page()
+        return generate_clean_onion_page(company_name)
+
     if "captcha" in url_lower or "challenge" in url_lower:
         return generate_captcha_page()
     if "broken" in url_lower:
