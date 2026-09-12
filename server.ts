@@ -3,13 +3,15 @@ import path from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { createServer as createViteServer } from "vite";
+import { capturePageContent, CaptureResult } from "./server/captureService";
 
 const execFileAsync = promisify(execFile);
 const app = express();
 const PORT = 3000;
 
 // Enable JSON body parsing and CORS for external portal integration
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
   res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
@@ -67,6 +69,8 @@ app.get("/api/health", (req, res) => {
       { method: "GET", path: "/api/export/intelligence", description: "Export recon intelligence feed (?format=json|stix|csv)" },
       { method: "POST", path: "/api/export/webhook", description: "Forward / push intelligence payload to external portal" },
       { method: "GET", path: "/api/export/logs", description: "View recent portal synchronization dispatches" },
+      { method: "POST", path: "/api/capture", description: "Capture full-page screenshot & raw HTML with wait-page bypass" },
+      { method: "GET", path: "/api/capture/history", description: "List recent captured pages & metadata" },
     ],
     timestamp: new Date().toISOString(),
   });
@@ -382,6 +386,99 @@ app.get("/api/export/logs", (req, res) => {
     logs: dispatchLogs,
   });
 });
+
+// --------------------------------------------------------------------------
+// PAGE CAPTURE & WAIT-PAGE BYPASS API (SCREENSHOT + RAW HTML EXTRACTION)
+// --------------------------------------------------------------------------
+
+interface CaptureHistoryItem {
+  id: string;
+  timestamp: string;
+  url: string;
+  finalUrl: string;
+  title: string;
+  httpStatus: number;
+  durationMs: number;
+  htmlSizeBytes: number;
+  bypassedActions: string[];
+  metadata: any;
+  screenshotPreview?: string;
+}
+
+const captureHistory: CaptureHistoryItem[] = [];
+
+// 8. Capture Page Content (Full-Page Screenshot + Raw HTML + Wait-Page Bypass)
+app.post("/api/capture", async (req, res) => {
+  try {
+    const { 
+      url, 
+      bypassWaitPages = true, 
+      autoClickButtons = true, 
+      removeOverlays = true, 
+      scrollForLazyLoad = true, 
+      timeoutMs = 30000,
+      viewportWidth = 1280,
+      viewportHeight = 800,
+      customUserAgent
+    } = req.body;
+
+    if (!url || typeof url !== "string" || !url.trim()) {
+      return res.status(400).json({
+        success: false,
+        error: "Missing required 'url' in request body. Please provide a valid web or onion address.",
+      });
+    }
+
+    const captureResult = await capturePageContent({
+      url: url.trim(),
+      bypassWaitPages: Boolean(bypassWaitPages),
+      autoClickButtons: Boolean(autoClickButtons),
+      removeOverlays: Boolean(removeOverlays),
+      scrollForLazyLoad: Boolean(scrollForLazyLoad),
+      timeoutMs: Number(timeoutMs) || 30000,
+      viewportWidth: Number(viewportWidth) || 1280,
+      viewportHeight: Number(viewportHeight) || 800,
+      customUserAgent: customUserAgent ? String(customUserAgent) : undefined,
+    });
+
+    if (captureResult.success) {
+      // Record in history (storing up to 20 recent captures)
+      const historyRecord: CaptureHistoryItem = {
+        id: `cap_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        timestamp: new Date().toISOString(),
+        url: captureResult.url,
+        finalUrl: captureResult.finalUrl,
+        title: captureResult.title,
+        httpStatus: captureResult.httpStatus,
+        durationMs: captureResult.durationMs,
+        htmlSizeBytes: captureResult.htmlSizeBytes,
+        bypassedActions: captureResult.bypassedActions,
+        metadata: captureResult.metadata,
+      };
+
+      captureHistory.unshift(historyRecord);
+      if (captureHistory.length > 20) captureHistory.pop();
+    }
+
+    res.json(captureResult);
+  } catch (err: any) {
+    console.error("Capture API Error:", err);
+    res.status(500).json({
+      success: false,
+      error: err.message || "An unexpected error occurred during page capture.",
+    });
+  }
+});
+
+// 9. Capture History
+app.get("/api/capture/history", (req, res) => {
+  res.json({
+    status: "success",
+    total_captures: captureHistory.length,
+    history: captureHistory,
+  });
+});
+
 
 // --------------------------------------------------------------------------
 // VITE SPA MIDDLEWARE / STATIC ASSETS

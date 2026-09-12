@@ -19,8 +19,12 @@ import {
   Server,
   ArrowRight,
   ExternalLink,
-  ChevronDown
+  ChevronDown,
+  Camera,
+  FastForward,
+  FileCode2
 } from 'lucide-react';
+import { PageCaptureStudio } from './components/PageCaptureStudio';
 
 interface SearchedOnionLink {
   provider: string;
@@ -251,6 +255,7 @@ const API_ENDPOINTS: ApiEndpointDef[] = [
 
 export default function App() {
   const [selectedCompanyId, setSelectedCompanyId] = useState<number>(1);
+  const [activeNavTab, setActiveNavTab] = useState<'all' | 'capture' | 'recon' | 'portal'>('all');
   const [copiedCmd, setCopiedCmd] = useState<string | null>(null);
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
   
@@ -400,10 +405,75 @@ export default function App() {
             })}
           </div>
         </div>
+
+        {/* Module Sub-Header Navigation */}
+        <div className="border-t border-slate-800/80 bg-slate-950/90 px-4 sm:px-6 lg:px-8 py-2">
+          <div className="max-w-7xl mx-auto flex items-center justify-between gap-3 overflow-x-auto">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setActiveNavTab('all')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
+                  activeNavTab === 'all'
+                    ? 'bg-slate-800 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                }`}
+              >
+                <span>All Modules</span>
+              </button>
+
+              <button
+                onClick={() => setActiveNavTab('capture')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition ${
+                  activeNavTab === 'capture'
+                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                }`}
+              >
+                <Camera className="h-3.5 w-3.5 text-cyan-400" />
+                <span>Page Capture &amp; Bypass</span>
+                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-cyan-950 border border-cyan-800 text-cyan-300">
+                  New Feature
+                </span>
+              </button>
+
+              <button
+                onClick={() => setActiveNavTab('recon')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
+                  activeNavTab === 'recon'
+                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                }`}
+              >
+                <Globe2 className="h-3.5 w-3.5 text-emerald-400" />
+                <span>Dark Web Recon ({INITIAL_COMPANIES.find(c => c.id === selectedCompanyId)?.name})</span>
+              </button>
+
+              <button
+                onClick={() => setActiveNavTab('portal')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
+                  activeNavTab === 'portal'
+                    ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 shadow-sm'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                }`}
+              >
+                <Share2 className="h-3.5 w-3.5 text-indigo-400" />
+                <span>External Portal Bridge</span>
+              </button>
+            </div>
+          </div>
+        </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-        {/* Verification Status Card */}
+        {/* Module 1: Live Page Capture & Wait-Page Bypass Studio */}
+        {(activeNavTab === 'all' || activeNavTab === 'capture') && (
+          <PageCaptureStudio />
+        )}
+
+        {/* Module 2: Darknet Recon & Searched Onion Links */}
+        {(activeNavTab === 'all' || activeNavTab === 'recon') && (
+          <>
+            {/* Verification Status Card */}
         <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 relative overflow-hidden shadow-xl">
           <div className="absolute -top-24 -right-24 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
           
@@ -557,12 +627,15 @@ export default function App() {
             </p>
           </div>
         </div>
+          </>
+        )}
 
         {/* ------------------------------------------------------------- */}
-        {/* NEW: EXTERNAL PORTAL BRIDGE & ENDPOINT DATA PULLER SECTION   */}
+        {/* MODULE 3: EXTERNAL PORTAL BRIDGE & ENDPOINT DATA PULLER       */}
         {/* ------------------------------------------------------------- */}
-        <div className="bg-slate-900/80 border border-cyan-900/40 rounded-2xl p-6 space-y-6 shadow-2xl relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+        {(activeNavTab === 'all' || activeNavTab === 'portal') && (
+          <div className="bg-slate-900/80 border border-cyan-900/40 rounded-2xl p-6 space-y-6 shadow-2xl relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
 
           {/* Section Header */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-800/80">
@@ -882,6 +955,7 @@ console.log("Queried Onion Endpoints:", data.searched_onion_links);`}</pre>
             </div>
           </div>
         </div>
+        )}
 
         {/* Script & CLI Operator Section */}
         <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 relative overflow-hidden space-y-6">
