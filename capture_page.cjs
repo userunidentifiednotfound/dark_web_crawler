@@ -60,6 +60,7 @@ async function run() {
   let width = 1280;
   let height = 800;
   let timeoutMs = 30000;
+  let waitTimeSec = 0;
   let asJson = false;
 
   for (let i = 0; i < args.length; i++) {
@@ -69,6 +70,8 @@ async function run() {
     else if (arg === '--json') asJson = true;
     else if (arg === '--output' && i + 1 < args.length) outDir = args[++i];
     else if (arg.startsWith('--output=')) outDir = arg.split('=')[1];
+    else if (arg === '--wait-time' && i + 1 < args.length) waitTimeSec = parseInt(args[++i], 10) || 0;
+    else if (arg.startsWith('--wait-time=')) waitTimeSec = parseInt(arg.split('=')[1], 10) || 0;
     else if (arg === '--viewport' && i + 1 < args.length) {
       const parts = args[++i].split('x').map(Number);
       if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
@@ -169,27 +172,58 @@ async function run() {
         actions.push(`Followed meta-refresh (${meta.delay}s delay) -> ${meta.url}`);
         let resolved = meta.url;
         if (!resolved.startsWith('http')) resolved = new URL(resolved, page.url()).href;
-        await page.goto(resolved, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+        if (meta.delay > 0) {
+          await new Promise((r) => setTimeout(r, Math.min(meta.delay, 10) * 1000));
+        }
+        await page.goto(resolved, { waitUntil: ['domcontentloaded', 'networkidle2'], timeout: 18000 }).catch(() => {});
         await page.evaluate(`window.__name = function(fn) { return fn; };`).catch(() => {});
       }
 
-      // 2. Countdown / wait screen check
-      const timerWait = await page.evaluate(`
+      // 2. Countdown / wait screen check with dynamic delay
+      const timerAnalysis = await page.evaluate(`
         (function() {
-          var t = document.body ? document.body.innerText : '';
-          return /please\\s+wait|redirecting\\s+in|wait\\s+\\d+\\s*s/i.test(t);
+          var text = document.body ? document.body.innerText : '';
+          var hasWaitKeywords = /please\\s+wait|redirecting\\s+in|loading\\s+in|checking\\s+your\\s+browser|just\\s+a\\s+moment|ddos|challenge|wait\\s+\\d+\\s*s/i.test(text);
+          var match = text.match(/(?:wait|redirecting in|loading in|checking your browser in)\\s*(?:for\\s*)?(\\d+)\\s*(?:s|sec|seconds)?/i) ||
+                      text.match(/(\\d+)\\s*(?:seconds?|secs?)\\s*(?:remaining|left|to\\s+redirect)/i);
+          var extractedSeconds = match ? parseInt(match[1], 10) : 0;
+          var timerEl = document.querySelector('#countdown, .countdown, #timer, .timer, [id*="timer"], [class*="timer"]');
+          if (timerEl && !extractedSeconds) {
+            var num = parseInt(timerEl.textContent || '', 10);
+            if (!isNaN(num) && num > 0 && num <= 60) extractedSeconds = num;
+          }
+          return {
+            hasWait: hasWaitKeywords || !!timerEl || extractedSeconds > 0,
+            seconds: extractedSeconds
+          };
         })()
       `);
-      if (timerWait) {
-        actions.push('Detected countdown/wait text. Waited for transition delay.');
-        await new Promise((r) => setTimeout(r, 2500));
+
+      let waitDurationMs = 0;
+      if (waitTimeSec > 0) {
+        waitDurationMs = waitTimeSec * 1000;
+        actions.push(`Enforcing CLI wait delay (${waitTimeSec}s)...`);
+      } else if (timerAnalysis && timerAnalysis.hasWait) {
+        if (timerAnalysis.seconds > 0) {
+          waitDurationMs = (Math.min(timerAnalysis.seconds, 20) + 1.5) * 1000;
+          actions.push(`Detected dynamic countdown timer (${timerAnalysis.seconds}s). Waiting ${Math.round(waitDurationMs / 1000)}s...`);
+        } else {
+          waitDurationMs = 5000;
+          actions.push('Detected interstitial/wait text. Waiting 5s for challenge settlement...');
+        }
+      }
+
+      if (waitDurationMs > 0) {
+        const navWait = page.waitForNavigation({ waitUntil: ['domcontentloaded', 'networkidle2'], timeout: waitDurationMs + 5000 }).catch(() => null);
+        await Promise.race([navWait, new Promise((r) => setTimeout(r, waitDurationMs))]);
+        await page.evaluate(`window.__name = function(fn) { return fn; };`).catch(() => {});
       }
 
       // 3. Auto-click Proceed / Continue buttons
       const clicked = await page.evaluate(`
         (function() {
-          var els = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"], [role="button"]'));
-          var p = [/proceed/i, /continue/i, /skip\\s+wait/i, /enter\\s+site/i, /access/i, /i\\s+agree/i];
+          var els = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"], [role="button"], span.btn, div.btn'));
+          var p = [/proceed/i, /continue/i, /skip\\s+wait/i, /enter\\s+site/i, /access/i, /i\\s+agree/i, /accept/i];
           for (var i = 0; i < p.length; i++) {
             for (var j = 0; j < els.length; j++) {
               var el = els[j];
@@ -208,22 +242,70 @@ async function run() {
       `);
       if (clicked) {
         actions.push(`Auto-clicked bypass button: "${clicked}"`);
-        await new Promise((r) => setTimeout(r, 2000));
+        await Promise.race([
+          page.waitForNavigation({ waitUntil: ['domcontentloaded', 'networkidle2'], timeout: 10000 }).catch(() => null),
+          new Promise((r) => setTimeout(r, 3500))
+        ]);
+        await page.evaluate(`window.__name = function(fn) { return fn; };`).catch(() => {});
       }
 
-      // 4. Dismiss blocking overlays
+      // 4. Dismiss blocking floating overlays safely
       await page.evaluate(`
         (function() {
           var sel = ['.modal-backdrop', '.interstitial-overlay', '#preloader', '.preloader', '[class*="loading-overlay"]'];
+          var totalTextLen = document.body ? (document.body.innerText || '').length : 0;
           sel.forEach(function(s) {
-            document.querySelectorAll(s).forEach(function(e) { e.style.display = 'none'; });
+            document.querySelectorAll(s).forEach(function(e) {
+              var elTextLen = (e.innerText || '').length;
+              if (totalTextLen > 0 && elTextLen >= totalTextLen * 0.5) return;
+              var st = window.getComputedStyle ? window.getComputedStyle(e) : null;
+              if (st && (st.position === 'fixed' || st.position === 'absolute')) {
+                e.style.display = 'none';
+              }
+            });
           });
+          if (document.body && document.body.style.overflow === 'hidden') {
+            document.body.style.overflow = 'auto';
+          }
         })()
       `).catch(() => {});
     }
 
+    // 5. Blank body recovery guard
+    let bodyState = await page.evaluate(`
+      (function() {
+        if (!document.body) return { isEmpty: true };
+        var visibleChildren = Array.from(document.body.children).filter(function(el) {
+          return el.tagName !== 'SCRIPT' && el.tagName !== 'STYLE' && el.tagName !== 'NOSCRIPT';
+        });
+        var text = (document.body.innerText || '').trim();
+        return { isEmpty: visibleChildren.length === 0 && text.length === 0, count: visibleChildren.length };
+      })()
+    `).catch(() => ({ isEmpty: true, count: 0 }));
+
+    if (bodyState.isEmpty) {
+      actions.push('Detected blank body in transition; polling for DOM hydration...');
+      for (let poll = 0; poll < 16; poll++) {
+        await new Promise((r) => setTimeout(r, 500));
+        bodyState = await page.evaluate(`
+          (function() {
+            if (!document.body) return { isEmpty: true };
+            var visibleChildren = Array.from(document.body.children).filter(function(el) {
+              return el.tagName !== 'SCRIPT' && el.tagName !== 'STYLE' && el.tagName !== 'NOSCRIPT';
+            });
+            var text = (document.body.innerText || '').trim();
+            return { isEmpty: visibleChildren.length === 0 && text.length === 0, count: visibleChildren.length };
+          })()
+        `).catch(() => ({ isEmpty: true, count: 0 }));
+        if (!bodyState.isEmpty) {
+          actions.push(`DOM populated after ${((poll + 1) * 0.5).toFixed(1)}s wait`);
+          break;
+        }
+      }
+    }
+
     // Scroll for lazy load
-    if (scrollLazy) {
+    if (scrollLazy && !bodyState.isEmpty) {
       await page.evaluate(`
         new Promise(function(resolve) {
           var total = 0;

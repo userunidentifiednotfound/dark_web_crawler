@@ -12,6 +12,8 @@ export interface CaptureOptions {
   viewportWidth?: number;
   viewportHeight?: number;
   customUserAgent?: string;
+  proxyUrl?: string; // Optional custom proxy: e.g. "socks5://127.0.0.1:9050" or "http://proxy:8080"
+  waitTimeSec?: number; // Configurable wait time (e.g., 5, 10, 15 seconds)
 }
 
 export interface CaptureResult {
@@ -20,6 +22,8 @@ export interface CaptureResult {
   finalUrl: string;
   title: string;
   httpStatus: number;
+  proxyEnabled: boolean;
+  proxyUsed?: string;
   screenshotBase64: string; // PNG base64 string without data prefix
   rawHtml: string;
   htmlSizeBytes: number;
@@ -122,10 +126,20 @@ export async function capturePageContent(options: CaptureOptions): Promise<Captu
     `--window-size=${width},${height}`,
   ];
 
-  // Route through Tor proxy if onion link
-  if (targetUrl.includes(".onion")) {
-    launchArgs.push("--proxy-server=socks5://127.0.0.1:9050");
-    bypassedActions.push("Tor SOCKS5 gateway route configured for .onion hidden service");
+  // Determine proxy routing:
+  // 1. Explicit custom proxy option (e.g., socks5://127.0.0.1:9050 or http://proxy:port)
+  // 2. Default SOCKS5 proxy (socks5://127.0.0.1:9050) when fetching .onion links
+  let proxyConfigured: string | undefined = undefined;
+  if (options.proxyUrl && options.proxyUrl.trim() && options.proxyUrl.trim() !== "direct") {
+    proxyConfigured = options.proxyUrl.trim();
+    launchArgs.push(`--proxy-server=${proxyConfigured}`);
+    bypassedActions.push(`Proxy routed via custom gateway: ${proxyConfigured}`);
+  } else if (targetUrl.includes(".onion")) {
+    proxyConfigured = "socks5://127.0.0.1:9050";
+    launchArgs.push(`--proxy-server=${proxyConfigured}`);
+    bypassedActions.push(`Tor SOCKS5 gateway route configured for .onion hidden service (${proxyConfigured})`);
+  } else {
+    bypassedActions.push("Direct internet connection (No proxy enabled for standard surface web)");
   }
 
   let browser: Browser | null = null;
@@ -189,34 +203,72 @@ export async function capturePageContent(options: CaptureOptions): Promise<Captu
 
       if (metaRefresh && metaRefresh.targetUrl) {
         bypassedActions.push(
-          `Detected meta-refresh interstitial (${metaRefresh.delay}s delay). Auto-following target: ${metaRefresh.targetUrl}`
+          `Detected meta-refresh interstitial (${metaRefresh.delay}s delay). Following target: ${metaRefresh.targetUrl}`
         );
         try {
           let resolved = metaRefresh.targetUrl;
           if (!resolved.startsWith("http")) {
             resolved = new URL(resolved, page.url()).href;
           }
-          await page.goto(resolved, { waitUntil: "domcontentloaded", timeout: 15000 });
+          if (metaRefresh.delay > 0) {
+            const waitMs = Math.min(metaRefresh.delay, 10) * 1000;
+            await new Promise((r) => setTimeout(r, waitMs));
+          }
+          await page.goto(resolved, { waitUntil: ["domcontentloaded", "networkidle2"], timeout: 18000 });
           await page.evaluate(`window.__name = function(fn) { return fn; };`).catch(() => {});
         } catch {
           // continue
         }
       }
 
-      // 2. Interstitial Countdown / Timer Handling
-      const waitTimerDetected = await page.evaluate(`
+      // 2. Interstitial Countdown / Security Check Timer Handling
+      const timerAnalysis = await page.evaluate(`
         (function() {
           var text = document.body ? document.body.innerText : '';
-          var hasWaitText = /please\\s+wait|redirecting\\s+in|loading\\s+in|wait\\s+\\d+\\s*s/i.test(text);
-          var timerElement = document.querySelector('#countdown, .countdown, #timer, .timer, [id*="timer"], [class*="timer"], [id*="wait"], [class*="wait"]');
-          return !!(hasWaitText || timerElement);
-        })()
-      `);
+          var hasWaitKeywords = /please\\s+wait|redirecting\\s+in|loading\\s+in|checking\\s+your\\s+browser|just\\s+a\\s+moment|ddos|challenge|security\\s+check|wait\\s+\\d+\\s*s/i.test(text);
 
-      if (waitTimerDetected) {
-        bypassedActions.push("Detected interstitial countdown / wait screen. Waiting out transition delay...");
-        // Wait up to 3 seconds for countdown or dynamic mutation
-        await new Promise((resolve) => setTimeout(resolve, 3000));
+          var match = text.match(/(?:wait|redirecting in|loading in|checking your browser in|standby|verifying)\\s*(?:for\\s*)?(\\d+)\\s*(?:s|sec|seconds)?/i) ||
+                      text.match(/(\\d+)\\s*(?:seconds?|secs?)\\s*(?:remaining|left|to\\s+redirect)/i);
+          var extractedSeconds = match ? parseInt(match[1], 10) : 0;
+
+          var timerEl = document.querySelector('#countdown, .countdown, #timer, .timer, [id*="timer"], [class*="timer"], [id*="countdown"], [class*="countdown"]');
+          if (timerEl && !extractedSeconds) {
+            var num = parseInt(timerEl.textContent || '', 10);
+            if (!isNaN(num) && num > 0 && num <= 60) {
+              extractedSeconds = num;
+            }
+          }
+
+          return {
+            hasWait: hasWaitKeywords || !!timerEl || extractedSeconds > 0,
+            seconds: extractedSeconds,
+            hasTimerElement: !!timerEl
+          };
+        })()
+      `) as { hasWait: boolean; seconds: number; hasTimerElement: boolean } | null;
+
+      // Determine required wait duration
+      let waitDurationMs = 0;
+      if (options.waitTimeSec && options.waitTimeSec > 0) {
+        waitDurationMs = Math.min(options.waitTimeSec, 30) * 1000;
+        bypassedActions.push(`Enforcing wait delay (${options.waitTimeSec}s) for security/wait page transition...`);
+      } else if (timerAnalysis && timerAnalysis.hasWait) {
+        if (timerAnalysis.seconds > 0) {
+          waitDurationMs = (Math.min(timerAnalysis.seconds, 20) + 1.5) * 1000;
+          bypassedActions.push(`Detected dynamic countdown timer (${timerAnalysis.seconds}s). Waiting ${Math.round(waitDurationMs / 1000)}s for expiration...`);
+        } else {
+          // Standard security challenge/wait page default delay
+          waitDurationMs = 5000;
+          bypassedActions.push("Detected interstitial/security check page. Waiting 5s for challenge settlement...");
+        }
+      }
+
+      if (waitDurationMs > 0) {
+        // Wait while monitoring if navigation occurs
+        const navWait = page.waitForNavigation({ waitUntil: ["domcontentloaded", "networkidle2"], timeout: waitDurationMs + 5000 }).catch(() => null);
+        const sleepWait = new Promise((resolve) => setTimeout(resolve, waitDurationMs));
+        await Promise.race([navWait, sleepWait]);
+        await page.evaluate(`window.__name = function(fn) { return fn; };`).catch(() => {});
       }
 
       // 3. Auto-Click "Continue" / "Proceed" / "Enter Site" / "Skip" Buttons
@@ -260,11 +312,16 @@ export async function capturePageContent(options: CaptureOptions): Promise<Captu
 
         if (clickedButton) {
           bypassedActions.push(`Auto-clicked interstitial bypass button: "${clickedButton}"`);
-          await new Promise((resolve) => setTimeout(resolve, 2000));
+          // Wait for post-click navigation or DOM mutation
+          await Promise.race([
+            page.waitForNavigation({ waitUntil: ["domcontentloaded", "networkidle2"], timeout: 12000 }).catch(() => null),
+            new Promise((resolve) => setTimeout(resolve, 3500))
+          ]);
+          await page.evaluate(`window.__name = function(fn) { return fn; };`).catch(() => {});
         }
       }
 
-      // 4. Remove Blocking Overlays / Fullscreen Spinners
+      // 4. Remove Blocking Overlays / Fullscreen Spinners (Safe Guarded)
       if (removeOverlays) {
         const removedCount = await page.evaluate(`
           (function() {
@@ -280,23 +337,102 @@ export async function capturePageContent(options: CaptureOptions): Promise<Captu
               '.veil'
             ];
 
+            var totalTextLen = document.body ? (document.body.innerText || '').length : 0;
+
             for (var i = 0; i < overlaySelectors.length; i++) {
               var els = document.querySelectorAll(overlaySelectors[i]);
               for (var j = 0; j < els.length; j++) {
-                els[j].style.display = 'none';
-                count++;
+                var el = els[j];
+                // Safety check: Never hide elements containing majority text
+                var elTextLen = (el.innerText || '').length;
+                if (totalTextLen > 0 && elTextLen >= totalTextLen * 0.5) {
+                  continue;
+                }
+                var style = window.getComputedStyle ? window.getComputedStyle(el) : null;
+                var isFloating = style && (style.position === 'fixed' || style.position === 'absolute');
+                if (isFloating || el.classList.contains('modal-backdrop') || el.classList.contains('veil')) {
+                  el.style.display = 'none';
+                  count++;
+                }
               }
             }
 
+            // Only override body overflow if it was explicitly locked to hidden
             if (document.body) {
-              document.body.style.overflow = 'auto';
+              var currOverflow = document.body.style.overflow;
+              if (currOverflow === 'hidden') {
+                document.body.style.overflow = 'auto';
+              }
             }
             return count;
           })()
         `) as number;
 
         if (removedCount > 0) {
-          bypassedActions.push(`Dismissed ${removedCount} blocking loading/interstitial overlay elements`);
+          bypassedActions.push(`Dismissed ${removedCount} blocking floating overlay element(s)`);
+        }
+      }
+    }
+
+    // -------------------------------------------------------------
+    // 5. BLANK BODY RECOVERY GUARD
+    // Prevents returning empty transition states like <html><head></head><body style="overflow: auto;"></body></html>
+    // -------------------------------------------------------------
+    let bodyState = await page.evaluate(`
+      (function() {
+        if (!document.body) return { isEmpty: true, childCount: 0, textLength: 0 };
+        var visibleChildren = Array.from(document.body.children).filter(function(el) {
+          return el.tagName !== 'SCRIPT' && el.tagName !== 'STYLE' && el.tagName !== 'NOSCRIPT';
+        });
+        var text = (document.body.innerText || '').trim();
+        return {
+          isEmpty: visibleChildren.length === 0 && text.length === 0,
+          childCount: visibleChildren.length,
+          textLength: text.length
+        };
+      })()
+    `).catch(() => ({ isEmpty: true, childCount: 0, textLength: 0 })) as {
+      isEmpty: boolean;
+      childCount: number;
+      textLength: number;
+    };
+
+    if (bodyState.isEmpty) {
+      bypassedActions.push("Notice: Detected blank body in transition state. Polling for page hydration and redirect completion...");
+      const maxPolls = 20; // up to 10 seconds (20 * 500ms)
+      for (let poll = 0; poll < maxPolls; poll++) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        bodyState = await (page.evaluate(`
+          (function() {
+            if (!document.body) return { isEmpty: true, childCount: 0, textLength: 0 };
+            var visibleChildren = Array.from(document.body.children).filter(function(el) {
+              return el.tagName !== 'SCRIPT' && el.tagName !== 'STYLE' && el.tagName !== 'NOSCRIPT';
+            });
+            var text = (document.body.innerText || '').trim();
+            return {
+              isEmpty: visibleChildren.length === 0 && text.length === 0,
+              childCount: visibleChildren.length,
+              textLength: text.length
+            };
+          })()
+        `).catch(() => ({ isEmpty: true, childCount: 0, textLength: 0 })) as Promise<{
+          isEmpty: boolean;
+          childCount: number;
+          textLength: number;
+        }>);
+
+        if (!bodyState.isEmpty) {
+          bypassedActions.push(`Page body resolved after ${((poll + 1) * 0.5).toFixed(1)}s (${bodyState.childCount} elements, ${bodyState.textLength} chars)`);
+          break;
+        }
+      }
+
+      // Check if page rendered inside an iframe
+      if (bodyState.isEmpty) {
+        const iframeCount = (await page.evaluate(`document.querySelectorAll('iframe').length`).catch(() => 0) as number) || 0;
+        if (iframeCount > 0) {
+          bypassedActions.push(`Found ${iframeCount} iframe(s) in empty parent frame; waiting for frame stabilization`);
+          await new Promise((resolve) => setTimeout(resolve, 2000));
         }
       }
     }
@@ -304,7 +440,7 @@ export async function capturePageContent(options: CaptureOptions): Promise<Captu
     // -------------------------------------------------------------
     // SCROLL TO TRIGGER LAZY-LOADED SECTIONS
     // -------------------------------------------------------------
-    if (scrollForLazyLoad) {
+    if (scrollForLazyLoad && !bodyState.isEmpty) {
       const scrollHeight = await page.evaluate(`
         new Promise(function(resolve) {
           var totalHeight = 0;
@@ -321,8 +457,10 @@ export async function capturePageContent(options: CaptureOptions): Promise<Captu
             }
           }, 80);
         })
-      `) as number;
-      bypassedActions.push(`Auto-scrolled page (${scrollHeight}px document height) to render lazy-loaded components`);
+      `).catch(() => 0) as number;
+      if (scrollHeight > 0) {
+        bypassedActions.push(`Auto-scrolled page (${scrollHeight}px document height) to render lazy-loaded components`);
+      }
     }
 
     // Brief stabilization delay
@@ -381,6 +519,8 @@ export async function capturePageContent(options: CaptureOptions): Promise<Captu
       finalUrl,
       title: pageTitle,
       httpStatus,
+      proxyEnabled: Boolean(proxyConfigured),
+      proxyUsed: proxyConfigured,
       screenshotBase64: screenshotBuffer as string,
       rawHtml,
       htmlSizeBytes: Buffer.byteLength(rawHtml, "utf8"),
@@ -396,6 +536,8 @@ export async function capturePageContent(options: CaptureOptions): Promise<Captu
       finalUrl: targetUrl,
       title: "Capture Error",
       httpStatus: 500,
+      proxyEnabled: Boolean(proxyConfigured),
+      proxyUsed: proxyConfigured,
       screenshotBase64: "",
       rawHtml: `<!-- Page capture failed: ${err.message || err} -->`,
       htmlSizeBytes: 0,

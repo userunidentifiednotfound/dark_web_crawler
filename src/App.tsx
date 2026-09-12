@@ -22,9 +22,12 @@ import {
   ChevronDown,
   Camera,
   FastForward,
-  FileCode2
+  FileCode2,
+  Sparkles,
+  MousePointerClick
 } from 'lucide-react';
 import { PageCaptureStudio } from './components/PageCaptureStudio';
+import { GuiVerificationRunner } from './components/GuiVerificationRunner';
 
 interface SearchedOnionLink {
   provider: string;
@@ -255,9 +258,26 @@ const API_ENDPOINTS: ApiEndpointDef[] = [
 
 export default function App() {
   const [selectedCompanyId, setSelectedCompanyId] = useState<number>(1);
-  const [activeNavTab, setActiveNavTab] = useState<'all' | 'capture' | 'recon' | 'portal'>('all');
+  const [activeNavTab, setActiveNavTab] = useState<'all' | 'capture' | 'recon' | 'portal' | 'verification'>('all');
   const [copiedCmd, setCopiedCmd] = useState<string | null>(null);
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
+  
+  // Option: 'gui' (Clean GUI - No CLI Commands) vs 'cli' (Developer CLI mode)
+  const [interfaceMode, setInterfaceMode] = useState<'gui' | 'cli'>(() => {
+    try {
+      const saved = localStorage.getItem('dwi_interface_mode');
+      return saved === 'cli' ? 'cli' : 'gui'; // Default to Clean GUI Mode (no CLI commands)
+    } catch {
+      return 'gui';
+    }
+  });
+
+  const handleInterfaceModeChange = (mode: 'gui' | 'cli') => {
+    setInterfaceMode(mode);
+    try {
+      localStorage.setItem('dwi_interface_mode', mode);
+    } catch {}
+  };
   
   // Endpoint Tester State
   const [activeEndpoint, setActiveEndpoint] = useState<ApiEndpointDef>(API_ENDPOINTS[0]);
@@ -381,28 +401,63 @@ export default function App() {
             </div>
           </div>
 
-          {/* Quick Target Switcher */}
-          <div className="flex items-center gap-2 bg-slate-950/80 border border-slate-800 p-1 rounded-xl">
-            {INITIAL_COMPANIES.map((company) => {
-              const isSelected = selectedCompanyId === company.id;
-              return (
-                <button
-                  key={company.id}
-                  onClick={() => setSelectedCompanyId(company.id)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-2 ${
-                    isSelected
-                      ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
-                  }`}
-                >
-                  <span className={`h-2 w-2 rounded-full ${isSelected ? 'bg-cyan-400' : 'bg-slate-600'}`} />
-                  <span>{company.name}</span>
-                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                    Clean
-                  </span>
-                </button>
-              );
-            })}
+          {/* Mode Switcher + Target Switcher */}
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* Mode Option Switcher: Clean GUI vs CLI */}
+            <div className="flex items-center gap-1 bg-slate-950/90 border border-slate-800 p-1 rounded-xl shadow-inner">
+              <button
+                onClick={() => handleInterfaceModeChange('gui')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer ${
+                  interfaceMode === 'gui'
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                }`}
+                title="Clean GUI: Operate entirely through point-and-click graphical controls. Zero CLI commands required."
+              >
+                <Sparkles className="h-3.5 w-3.5 text-emerald-400" />
+                <span>Clean GUI (No CLI)</span>
+                <span className="text-[9px] font-mono px-1 rounded bg-emerald-500/20 text-emerald-300 font-bold">
+                  Active
+                </span>
+              </button>
+
+              <button
+                onClick={() => handleInterfaceModeChange('cli')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer ${
+                  interfaceMode === 'cli'
+                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                }`}
+                title="CLI Mode: Show terminal commands and developer snippets"
+              >
+                <Terminal className="h-3.5 w-3.5 text-cyan-400" />
+                <span>CLI Mode</span>
+              </button>
+            </div>
+
+            {/* Quick Target Switcher */}
+            <div className="flex items-center gap-2 bg-slate-950/80 border border-slate-800 p-1 rounded-xl">
+              {INITIAL_COMPANIES.map((company) => {
+                const isSelected = selectedCompanyId === company.id;
+                return (
+                  <button
+                    key={company.id}
+                    onClick={() => setSelectedCompanyId(company.id)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-2 ${
+                      isSelected
+                        ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
+                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+                    }`}
+                  >
+                    <span className={`h-2 w-2 rounded-full ${isSelected ? 'bg-cyan-400' : 'bg-slate-600'}`} />
+                    <span>{company.name}</span>
+                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                      Clean
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
 
@@ -419,6 +474,21 @@ export default function App() {
                 }`}
               >
                 <span>All Modules</span>
+              </button>
+
+              <button
+                onClick={() => setActiveNavTab('verification')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
+                  activeNavTab === 'verification'
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                }`}
+              >
+                <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
+                <span>Target Verification Hub (GUI)</span>
+                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-950 border border-emerald-800 text-emerald-300">
+                  Zero CLI
+                </span>
               </button>
 
               <button
@@ -462,6 +532,26 @@ export default function App() {
             </div>
           </div>
         </div>
+
+        {/* Clean GUI Mode Notification Banner */}
+        {interfaceMode === 'gui' && (
+          <div className="bg-emerald-950/40 border-t border-b border-emerald-800/40 px-4 sm:px-6 lg:px-8 py-2 text-xs">
+            <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-emerald-300">
+                <Sparkles className="h-3.5 w-3.5 text-emerald-400 flex-shrink-0" />
+                <span>
+                  <strong>Clean GUI Mode Active:</strong> Point-and-click graphical workflow. All URL captures, wait-page bypass, multi-target verifications, and threat exports run directly without terminal or CLI commands.
+                </span>
+              </div>
+              <button
+                onClick={() => handleInterfaceModeChange('cli')}
+                className="text-[11px] font-mono text-emerald-400/90 hover:text-white underline flex-shrink-0"
+              >
+                Switch to CLI Mode
+              </button>
+            </div>
+          </div>
+        )}
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
@@ -883,32 +973,70 @@ export default function App() {
             )}
           </div>
 
-          {/* Integration Code Snippets */}
+          {/* Integration Code Snippets / GUI Alternative */}
           <div className="pt-6 border-t border-slate-800/80 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Code2 className="h-4 w-4 text-cyan-400" />
-                <span className="text-xs font-mono uppercase tracking-wider text-slate-400">Pull Intelligence in External Systems</span>
+            {interfaceMode === 'gui' ? (
+              <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="h-9 w-9 rounded-lg bg-emerald-500/15 border border-emerald-500/40 flex items-center justify-center text-emerald-400 flex-shrink-0">
+                    <MousePointerClick className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="font-semibold text-white text-xs flex items-center gap-2">
+                      <span>Point-and-Click Portal Dispatching (No CLI Required)</span>
+                      <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-semibold">
+                        Clean GUI Mode
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">
+                      All endpoints can be pulled, inspected, and forwarded directly via the graphical controls above. Zero command line input required.
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => handleInterfaceModeChange('cli')}
+                  className="text-xs text-cyan-400 hover:text-cyan-300 font-mono flex items-center gap-1.5 hover:underline self-start sm:self-auto flex-shrink-0 cursor-pointer"
+                >
+                  <Terminal className="h-3.5 w-3.5" />
+                  <span>Show CLI / cURL Snippets</span>
+                </button>
               </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Code2 className="h-4 w-4 text-cyan-400" />
+                    <span className="text-xs font-mono uppercase tracking-wider text-slate-400">Pull Intelligence in External Systems</span>
+                  </div>
 
-              <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
-                {(['curl', 'python', 'javascript'] as const).map((lang) => (
-                  <button
-                    key={lang}
-                    onClick={() => setSnippetTab(lang)}
-                    className={`px-2.5 py-0.5 rounded text-[11px] font-mono transition ${
-                      snippetTab === lang ? 'bg-cyan-500/20 text-cyan-300 font-semibold' : 'text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    {lang.toUpperCase()}
-                  </button>
-                ))}
-              </div>
-            </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleInterfaceModeChange('gui')}
+                      className="text-xs text-emerald-400 hover:text-emerald-300 font-mono flex items-center gap-1 hover:underline mr-2"
+                    >
+                      <Sparkles className="h-3.5 w-3.5" />
+                      <span>Back to Clean GUI</span>
+                    </button>
 
-            <div className="relative bg-slate-950 border border-slate-800 rounded-xl p-3 font-mono text-xs text-cyan-300 overflow-x-auto">
-              {snippetTab === 'curl' && (
-                <pre>{`# 1. Pull All Monitored Companies & Status
+                    <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
+                      {(['curl', 'python', 'javascript'] as const).map((lang) => (
+                        <button
+                          key={lang}
+                          onClick={() => setSnippetTab(lang)}
+                          className={`px-2.5 py-0.5 rounded text-[11px] font-mono transition ${
+                            snippetTab === lang ? 'bg-cyan-500/20 text-cyan-300 font-semibold' : 'text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          {lang.toUpperCase()}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="relative bg-slate-950 border border-slate-800 rounded-xl p-3 font-mono text-xs text-cyan-300 overflow-x-auto">
+                  {snippetTab === 'curl' && (
+                    <pre>{`# 1. Pull All Monitored Companies & Status
 curl -X GET "https://your-app-domain.run.app/api/companies"
 
 # 2. Pull Searched Onion Links for Tolaram or MetaYB
@@ -916,10 +1044,10 @@ curl -X GET "https://your-app-domain.run.app/api/onion-links?company=Tolaram"
 
 # 3. Export STIX 2.1 Threat Intel Bundle for SIEM
 curl -X GET "https://your-app-domain.run.app/api/export/intelligence?format=stix"`}</pre>
-              )}
+                  )}
 
-              {snippetTab === 'python' && (
-                <pre>{`import requests
+                  {snippetTab === 'python' && (
+                    <pre>{`import requests
 
 # Pull dark web recon feed into downstream security portal
 res = requests.get("https://your-app-domain.run.app/api/export/intelligence?format=json")
@@ -929,131 +1057,153 @@ for target in intel_data["data"]:
     print(f"Target: {target['name']} | Status: {target['status']}")
     for link in target["searched_onion_links"]:
         print(f"  Onion Gateway: {link['provider']} -> {link['url']}")`}</pre>
-              )}
+                  )}
 
-              {snippetTab === 'javascript' && (
-                <pre>{`// Pull intelligence feed from another web portal or Node service
+                  {snippetTab === 'javascript' && (
+                    <pre>{`// Pull intelligence feed from another web portal or Node service
 const response = await fetch('/api/onion-links?company=Tolaram');
 const data = await response.json();
 
 console.log("Queried Onion Endpoints:", data.searched_onion_links);`}</pre>
-              )}
+                  )}
 
-              <button
-                onClick={() => {
-                  let text = '';
-                  if (snippetTab === 'curl') text = `curl -X GET "https://your-app-domain.run.app/api/companies"`;
-                  if (snippetTab === 'python') text = `import requests\nres = requests.get("/api/companies")`;
-                  if (snippetTab === 'javascript') text = `const res = await fetch('/api/companies');`;
-                  copyToClipboard(text);
-                }}
-                className="absolute top-2.5 right-2.5 p-1.5 bg-slate-900 hover:bg-slate-800 rounded border border-slate-800 text-slate-400 hover:text-white transition"
-                title="Copy snippet"
-              >
-                <Copy className="h-3.5 w-3.5" />
-              </button>
-            </div>
+                  <button
+                    onClick={() => {
+                      let text = '';
+                      if (snippetTab === 'curl') text = `curl -X GET "https://your-app-domain.run.app/api/companies"`;
+                      if (snippetTab === 'python') text = `import requests\nres = requests.get("/api/companies")`;
+                      if (snippetTab === 'javascript') text = `const res = await fetch('/api/companies');`;
+                      copyToClipboard(text);
+                    }}
+                    className="absolute top-2.5 right-2.5 p-1.5 bg-slate-900 hover:bg-slate-800 rounded border border-slate-800 text-slate-400 hover:text-white transition cursor-pointer"
+                    title="Copy snippet"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
         )}
 
-        {/* Script & CLI Operator Section */}
-        <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 relative overflow-hidden space-y-6">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-2">
-                <Terminal className="h-5 w-5 text-cyan-400" />
-                <h3 className="text-lg font-semibold text-white">Multi-Company Verification Script &amp; CLI Exporter</h3>
-              </div>
-              <p className="text-sm text-slate-400 mt-1">
-                Run the verification script directly from terminal or export directly to an external portal:
-              </p>
-            </div>
+        {/* Verification Engine: Interactive GUI Hub in GUI Mode vs Terminal Scripts in CLI Mode */}
+        {(activeNavTab === 'all' || activeNavTab === 'verification') && (
+          interfaceMode === 'gui' ? (
+            <GuiVerificationRunner onOpenPortalBridge={() => setActiveNavTab('portal')} />
+          ) : (
+            /* Script & CLI Operator Section (CLI Mode Only) */
+            <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 relative overflow-hidden space-y-6">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Terminal className="h-5 w-5 text-cyan-400" />
+                    <h3 className="text-lg font-semibold text-white">Multi-Company Verification Script &amp; CLI Exporter</h3>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                      CLI Mode
+                    </span>
+                  </div>
+                  <p className="text-sm text-slate-400 mt-1">
+                    Run the verification script directly from terminal or export directly to an external portal:
+                  </p>
+                </div>
 
-            <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 px-3 py-2 rounded-lg font-mono text-xs text-cyan-300">
-              <span>python3 check_companies.py</span>
-              <button 
-                onClick={() => copyToClipboard('python3 check_companies.py')}
-                className="hover:text-white p-1 rounded hover:bg-slate-800 transition"
-                title="Copy command"
-              >
-                {copiedCmd === 'python3 check_companies.py' ? (
-                  <Check className="h-4 w-4 text-emerald-400" />
-                ) : (
-                  <Copy className="h-4 w-4" />
-                )}
-              </button>
-            </div>
-          </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleInterfaceModeChange('gui')}
+                    className="px-3 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                  >
+                    <Sparkles className="h-3.5 w-3.5" />
+                    <span>Switch to Clean GUI Mode</span>
+                  </button>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="font-semibold text-sm text-white flex items-center gap-2">
-                  <Terminal className="h-4 w-4 text-emerald-400" />
-                  JSON Structured Telemetry
-                </span>
-                <button
-                  onClick={() => copyToClipboard('python3 check_companies.py --json')}
-                  className="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1 font-mono"
-                >
-                  <Copy className="h-3.5 w-3.5" />
-                  <span>Copy</span>
-                </button>
+                  <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 px-3 py-2 rounded-lg font-mono text-xs text-cyan-300">
+                    <span>python3 check_companies.py</span>
+                    <button 
+                      onClick={() => copyToClipboard('python3 check_companies.py')}
+                      className="hover:text-white p-1 rounded hover:bg-slate-800 transition cursor-pointer"
+                      title="Copy command"
+                    >
+                      {copiedCmd === 'python3 check_companies.py' ? (
+                        <Check className="h-4 w-4 text-emerald-400" />
+                      ) : (
+                        <Copy className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
+                </div>
               </div>
-              <p className="text-xs text-slate-400">
-                Returns machine-readable JSON output for automated pipelines, alerting systems, or SIEM integration.
-              </p>
-              <div className="bg-slate-900 border border-slate-800/80 rounded p-2 text-[11px] font-mono text-slate-300 overflow-x-auto">
-                python3 check_companies.py --json
-              </div>
-            </div>
 
-            <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="font-semibold text-sm text-white flex items-center gap-2">
-                  <Send className="h-4 w-4 text-indigo-400" />
-                  Direct CLI Portal Push
-                </span>
-                <button
-                  onClick={() => copyToClipboard('python3 check_companies.py --export-portal https://other-portal.com/ingest')}
-                  className="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1 font-mono"
-                >
-                  <Copy className="h-3.5 w-3.5" />
-                  <span>Copy</span>
-                </button>
-              </div>
-              <p className="text-xs text-slate-400">
-                Pushes intelligence data directly to any remote endpoint via CLI without launching a web server.
-              </p>
-              <div className="bg-slate-900 border border-slate-800/80 rounded p-2 text-[11px] font-mono text-slate-300 overflow-x-auto">
-                python3 check_companies.py --export-portal &lt;URL&gt;
-              </div>
-            </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-sm text-white flex items-center gap-2">
+                      <Terminal className="h-4 w-4 text-emerald-400" />
+                      JSON Structured Telemetry
+                    </span>
+                    <button
+                      onClick={() => copyToClipboard('python3 check_companies.py --json')}
+                      className="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1 font-mono cursor-pointer"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                      <span>Copy</span>
+                    </button>
+                  </div>
+                  <p className="text-xs text-slate-400">
+                    Returns machine-readable JSON output for automated pipelines, alerting systems, or SIEM integration.
+                  </p>
+                  <div className="bg-slate-900 border border-slate-800/80 rounded p-2 text-[11px] font-mono text-slate-300 overflow-x-auto">
+                    python3 check_companies.py --json
+                  </div>
+                </div>
 
-            <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="font-semibold text-sm text-white flex items-center gap-2">
-                  <Layers className="h-4 w-4 text-cyan-400" />
-                  Interactive CLI Dashboard
-                </span>
-                <button
-                  onClick={() => copyToClipboard('python3 -m dwi_crawler.cli.main dashboard')}
-                  className="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1 font-mono"
-                >
-                  <Copy className="h-3.5 w-3.5" />
-                  <span>Copy</span>
-                </button>
-              </div>
-              <p className="text-xs text-slate-400">
-                Launch the terminal dashboard to inspect queues, live crawl feeds, and CAS storage.
-              </p>
-              <div className="bg-slate-900 border border-slate-800/80 rounded p-2 text-[11px] font-mono text-slate-300 overflow-x-auto">
-                python3 -m dwi_crawler.cli.main dashboard
+                <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-sm text-white flex items-center gap-2">
+                      <Send className="h-4 w-4 text-indigo-400" />
+                      Direct CLI Portal Push
+                    </span>
+                    <button
+                      onClick={() => copyToClipboard('python3 check_companies.py --export-portal https://other-portal.com/ingest')}
+                      className="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1 font-mono cursor-pointer"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                      <span>Copy</span>
+                    </button>
+                  </div>
+                  <p className="text-xs text-slate-400">
+                    Pushes intelligence data directly to any remote endpoint via CLI without launching a web server.
+                  </p>
+                  <div className="bg-slate-900 border border-slate-800/80 rounded p-2 text-[11px] font-mono text-slate-300 overflow-x-auto">
+                    python3 check_companies.py --export-portal &lt;URL&gt;
+                  </div>
+                </div>
+
+                <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-sm text-white flex items-center gap-2">
+                      <Layers className="h-4 w-4 text-cyan-400" />
+                      Interactive CLI Dashboard
+                    </span>
+                    <button
+                      onClick={() => copyToClipboard('python3 -m dwi_crawler.cli.main dashboard')}
+                      className="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1 font-mono cursor-pointer"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                      <span>Copy</span>
+                    </button>
+                  </div>
+                  <p className="text-xs text-slate-400">
+                    Launch the terminal dashboard to inspect queues, live crawl feeds, and CAS storage.
+                  </p>
+                  <div className="bg-slate-900 border border-slate-800/80 rounded p-2 text-[11px] font-mono text-slate-300 overflow-x-auto">
+                    python3 -m dwi_crawler.cli.main dashboard
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
+          )
+        )}
       </main>
     </div>
   );

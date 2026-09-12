@@ -25,7 +25,9 @@ import {
   Monitor,
   Laptop,
   Smartphone,
-  Info
+  Info,
+  Network,
+  Radio
 } from 'lucide-react';
 import { CaptureResponse, CaptureHistoryRecord } from '../types';
 
@@ -42,6 +44,9 @@ export function PageCaptureStudio() {
   const [removeOverlays, setRemoveOverlays] = useState<boolean>(true);
   const [scrollForLazyLoad, setScrollForLazyLoad] = useState<boolean>(true);
   const [viewportPreset, setViewportPreset] = useState<'desktop' | 'standard' | 'mobile'>('standard');
+  const [proxyMode, setProxyMode] = useState<'auto' | 'socks5' | 'direct' | 'custom'>('auto');
+  const [customProxyUrl, setCustomProxyUrl] = useState<string>('socks5://127.0.0.1:9050');
+  const [waitTimeSec, setWaitTimeSec] = useState<number>(0);
   const [showAdvanced, setShowAdvanced] = useState<boolean>(false);
 
   const [loading, setLoading] = useState<boolean>(false);
@@ -93,6 +98,16 @@ export function PageCaptureStudio() {
       viewportPreset === 'mobile' ? { width: 390, height: 844 } :
       { width: 1280, height: 800 };
 
+    // Determine proxy argument
+    let proxyArgument: string | undefined = undefined;
+    if (proxyMode === 'socks5') {
+      proxyArgument = 'socks5://127.0.0.1:9050';
+    } else if (proxyMode === 'direct') {
+      proxyArgument = 'direct';
+    } else if (proxyMode === 'custom') {
+      proxyArgument = customProxyUrl.trim() || undefined;
+    } // 'auto' leaves proxyArgument undefined so the server chooses socks5 for .onion, and direct for surface web
+
     try {
       const res = await fetch('/api/capture', {
         method: 'POST',
@@ -105,6 +120,8 @@ export function PageCaptureStudio() {
           scrollForLazyLoad,
           viewportWidth: dims.width,
           viewportHeight: dims.height,
+          proxyUrl: proxyArgument,
+          waitTimeSec: Number(waitTimeSec) || 0,
         }),
       });
 
@@ -311,38 +328,86 @@ export function PageCaptureStudio() {
             </label>
           </div>
 
-          {/* Viewport Presets */}
-          <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 p-1 rounded-lg">
-            <button
-              onClick={() => setViewportPreset('standard')}
-              className={`px-2.5 py-1 rounded text-[11px] font-mono flex items-center gap-1 transition ${
-                viewportPreset === 'standard' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30' : 'text-slate-400 hover:text-white'
-              }`}
-              title="Standard Viewport: 1280x800"
-            >
-              <Laptop className="h-3 w-3" />
-              <span>1280px</span>
-            </button>
-            <button
-              onClick={() => setViewportPreset('desktop')}
-              className={`px-2.5 py-1 rounded text-[11px] font-mono flex items-center gap-1 transition ${
-                viewportPreset === 'desktop' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30' : 'text-slate-400 hover:text-white'
-              }`}
-              title="Desktop 1080p: 1920x1080"
-            >
-              <Monitor className="h-3 w-3" />
-              <span>1920px</span>
-            </button>
-            <button
-              onClick={() => setViewportPreset('mobile')}
-              className={`px-2.5 py-1 rounded text-[11px] font-mono flex items-center gap-1 transition ${
-                viewportPreset === 'mobile' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30' : 'text-slate-400 hover:text-white'
-              }`}
-              title="Mobile Viewport: 390x844"
-            >
-              <Smartphone className="h-3 w-3" />
-              <span>Mobile</span>
-            </button>
+          {/* Viewport Presets & Proxy Gateway Mode */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Proxy Selector Control */}
+            <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 px-2 py-1 rounded-lg">
+              <Network className="h-3.5 w-3.5 text-cyan-400" />
+              <span className="text-[11px] font-mono text-slate-400">Proxy:</span>
+              <select
+                value={proxyMode}
+                onChange={(e) => setProxyMode(e.target.value as any)}
+                className="bg-slate-950 border border-slate-800 text-xs font-mono text-cyan-300 rounded px-2 py-0.5 focus:outline-none focus:border-cyan-500 cursor-pointer"
+                title="Configure proxy routing when fetching the page"
+              >
+                <option value="auto">Auto (Tor SOCKS5 for .onion, Direct for Surface)</option>
+                <option value="socks5">Enforce Tor SOCKS5 (127.0.0.1:9050)</option>
+                <option value="direct">Direct Connection (No Proxy)</option>
+                <option value="custom">Custom Proxy Gateway</option>
+              </select>
+            </div>
+
+            {proxyMode === 'custom' && (
+              <input
+                type="text"
+                value={customProxyUrl}
+                onChange={(e) => setCustomProxyUrl(e.target.value)}
+                placeholder="e.g. socks5://127.0.0.1:9050 or http://proxy:8080"
+                className="bg-slate-950 border border-slate-800 text-xs font-mono text-white px-2.5 py-1 rounded-lg focus:outline-none focus:border-cyan-500"
+              />
+            )}
+
+            {/* Wait Delay Selector (Solves Blank Pages / DDOS Countdown Interstitials) */}
+            <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 px-2 py-1 rounded-lg">
+              <Clock className="h-3.5 w-3.5 text-amber-400" />
+              <span className="text-[11px] font-mono text-slate-400">Wait Delay:</span>
+              <select
+                value={waitTimeSec}
+                onChange={(e) => setWaitTimeSec(Number(e.target.value))}
+                className="bg-slate-950 border border-slate-800 text-xs font-mono text-amber-300 rounded px-2 py-0.5 focus:outline-none focus:border-amber-500 cursor-pointer"
+                title="Configurable delay for interstitial countdowns or security challenge gates (DDoS-GUARD, Cloudflare, etc.)"
+              >
+                <option value={0}>Auto-Detect (Adaptive Countdown)</option>
+                <option value={3}>3s (Fast Interstitial)</option>
+                <option value={5}>5s (Standard Challenge / DDOS)</option>
+                <option value={10}>10s (Heavy Gateway / Countdown)</option>
+                <option value={15}>15s (Extended Onion Delay)</option>
+              </select>
+            </div>
+
+            {/* Viewport Presets */}
+            <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 p-1 rounded-lg">
+              <button
+                onClick={() => setViewportPreset('standard')}
+                className={`px-2.5 py-1 rounded text-[11px] font-mono flex items-center gap-1 transition ${
+                  viewportPreset === 'standard' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30' : 'text-slate-400 hover:text-white'
+                }`}
+                title="Standard Viewport: 1280x800"
+              >
+                <Laptop className="h-3 w-3" />
+                <span>1280px</span>
+              </button>
+              <button
+                onClick={() => setViewportPreset('desktop')}
+                className={`px-2.5 py-1 rounded text-[11px] font-mono flex items-center gap-1 transition ${
+                  viewportPreset === 'desktop' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30' : 'text-slate-400 hover:text-white'
+                }`}
+                title="Desktop 1080p: 1920x1080"
+              >
+                <Monitor className="h-3 w-3" />
+                <span>1920px</span>
+              </button>
+              <button
+                onClick={() => setViewportPreset('mobile')}
+                className={`px-2.5 py-1 rounded text-[11px] font-mono flex items-center gap-1 transition ${
+                  viewportPreset === 'mobile' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30' : 'text-slate-400 hover:text-white'
+                }`}
+                title="Mobile Viewport: 390x844"
+              >
+                <Smartphone className="h-3 w-3" />
+                <span>Mobile</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -403,6 +468,24 @@ export function PageCaptureStudio() {
 
             {/* Quick Metrics */}
             <div className="flex items-center gap-3 flex-wrap">
+              {/* Proxy Route Chip */}
+              <div className="text-right">
+                <div className="text-[10px] font-mono text-slate-500 uppercase">Proxy Route</div>
+                <div className="text-xs font-bold font-mono flex items-center gap-1 justify-end">
+                  {captureData.proxyEnabled ? (
+                    <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                      <Network className="h-3 w-3" />
+                      <span>{captureData.proxyUsed?.includes('9050') ? 'Tor SOCKS5' : 'Proxy Active'}</span>
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded bg-slate-900 text-slate-400 border border-slate-800 flex items-center gap-1">
+                      <Radio className="h-3 w-3 text-slate-500" />
+                      <span>Direct (No Proxy)</span>
+                    </span>
+                  )}
+                </div>
+              </div>
+
               <div className="text-right">
                 <div className="text-[10px] font-mono text-slate-500 uppercase">Load Time</div>
                 <div className="text-xs font-bold text-white font-mono flex items-center gap-1 justify-end">
@@ -424,6 +507,43 @@ export function PageCaptureStudio() {
               </div>
             </div>
           </div>
+
+          {/* Sparse/Blank DOM or Wait Page Detection Banner */}
+          {(captureData.metadata.totalElements <= 5 || captureData.rawHtml.includes('<body style="overflow: auto;"></body>') || captureData.htmlSizeBytes < 250) && (
+            <div className="bg-amber-950/40 border border-amber-500/40 rounded-xl p-3.5 flex items-start gap-3 text-xs text-amber-200 shadow-sm">
+              <AlertTriangle className="h-4 w-4 text-amber-400 mt-0.5 flex-shrink-0" />
+              <div className="space-y-1.5 flex-1">
+                <p className="font-semibold text-amber-300">
+                  Minimal or Empty DOM Detected ({captureData.metadata.totalElements} tags, {(captureData.htmlSizeBytes / 1024).toFixed(2)} KB)
+                </p>
+                <p className="text-slate-300 text-[11px] leading-relaxed">
+                  This page likely uses an interstitial security check or countdown wait screen (e.g. Cloudflare, DDoS-GUARD, or Tor onion gateway). If the initial pass settled too quickly, click below to re-fetch with an extended wait delay.
+                </p>
+                <div className="pt-1 flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={() => {
+                      setWaitTimeSec(5);
+                      handleCapture();
+                    }}
+                    className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 rounded font-mono text-[11px] flex items-center gap-1.5 transition cursor-pointer"
+                  >
+                    <Clock className="h-3 w-3" />
+                    <span>Retry with 5s Wait Delay</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setWaitTimeSec(10);
+                      handleCapture();
+                    }}
+                    className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 rounded font-mono text-[11px] flex items-center gap-1.5 transition cursor-pointer"
+                  >
+                    <Clock className="h-3 w-3" />
+                    <span>Retry with 10s Wait Delay</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Navigation Tabs between Screenshot and Raw HTML */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-2">
@@ -696,7 +816,23 @@ export function PageCaptureStudio() {
                 ))}
               </div>
 
-              <div className="pt-4 border-t border-slate-800/80 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
+              <div className="pt-4 border-t border-slate-800/80 grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-mono">
+                <div className="bg-slate-900/50 p-3 rounded-lg border border-slate-800/60 space-y-1">
+                  <div className="text-slate-400 uppercase text-[10px]">Proxy Status &amp; Gateway</div>
+                  <div className={`font-semibold flex items-center gap-1.5 ${captureData.proxyEnabled ? 'text-emerald-400' : 'text-slate-300'}`}>
+                    {captureData.proxyEnabled ? (
+                      <>
+                        <Network className="h-3.5 w-3.5 text-emerald-400" />
+                        <span>Enabled ({captureData.proxyUsed})</span>
+                      </>
+                    ) : (
+                      <>
+                        <Radio className="h-3.5 w-3.5 text-slate-500" />
+                        <span>Disabled (Direct Connection)</span>
+                      </>
+                    )}
+                  </div>
+                </div>
                 <div className="bg-slate-900/50 p-3 rounded-lg border border-slate-800/60 space-y-1">
                   <div className="text-slate-400 uppercase text-[10px]">Canonical / Destination</div>
                   <div className="text-cyan-300 truncate">{captureData.finalUrl}</div>
@@ -730,9 +866,20 @@ export function PageCaptureStudio() {
                   handleCapture(item.url);
                 }}
                 disabled={loading}
-                className="bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 px-3 py-1.5 rounded-lg text-left flex-shrink-0 text-xs transition space-y-0.5 max-w-[200px]"
+                className="bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 px-3 py-1.5 rounded-lg text-left flex-shrink-0 text-xs transition space-y-0.5 max-w-[220px] cursor-pointer"
               >
-                <div className="font-semibold text-white truncate">{item.title || item.url}</div>
+                <div className="flex items-center justify-between gap-1">
+                  <span className="font-semibold text-white truncate flex-1">{item.title || item.url}</span>
+                  {item.proxyEnabled ? (
+                    <span className="text-[9px] font-mono px-1 rounded bg-emerald-500/15 text-emerald-300 flex-shrink-0">
+                      Tor Proxy
+                    </span>
+                  ) : (
+                    <span className="text-[9px] font-mono px-1 rounded bg-slate-900 text-slate-500 flex-shrink-0">
+                      Direct
+                    </span>
+                  )}
+                </div>
                 <div className="text-[10px] font-mono text-slate-400 truncate">{item.finalUrl}</div>
               </button>
             ))}

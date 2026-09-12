@@ -50,6 +50,8 @@ export interface CaptureResponse {
   finalUrl: string;
   title: string;
   httpStatus: number;
+  proxyEnabled?: boolean;
+  proxyUsed?: string;
   screenshotBase64: string;
   rawHtml: string;
   htmlSizeBytes: number;
@@ -68,6 +70,8 @@ export interface CaptureHistoryRecord {
   httpStatus: number;
   durationMs: number;
   htmlSizeBytes: number;
+  proxyEnabled?: boolean;
+  proxyUsed?: string;
   bypassedActions: string[];
   metadata: CaptureMetadata;
 }
